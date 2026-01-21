@@ -1,0 +1,4 @@
+apiVersion: v2
+name: twodo-app
+description: Helm chart for TwoDo App (Frontend 5000, Backend 5001)
+version: 0.1.0

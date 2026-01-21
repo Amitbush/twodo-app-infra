@@ -1,0 +1,12 @@
+backend:
+  image: 993412842562.dkr.ecr.us-east-1.amazonaws.com/twodo-backend
+  tag: latest
+  port: 5001
+
+frontend:
+  image: 993412842562.dkr.ecr.us-east-1.amazonaws.com/twodo-frontend
+  tag: latest
+  port: 5000
+
+ingress:
+  name: twodo-ingress

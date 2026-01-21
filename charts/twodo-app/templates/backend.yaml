@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: twodo-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: twodo-backend
+  template:
+    metadata:
+      labels:
+        app: twodo-backend
+    spec:
+      containers:
+      - name: backend
+        image: {{ .Values.backend.image }}:{{ .Values.backend.tag }}
+        ports:
+        - containerPort: {{ .Values.backend.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  type: ClusterIP
+  selector:
+    app: twodo-backend
+  ports:
+  - port: 80
+    targetPort: {{ .Values.backend.port }}
