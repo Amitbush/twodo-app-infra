@@ -1,3 +1,6 @@
+# שם הפרויקט - חייב להיות תואם למה שמוגדר ב-Terraform
+project_name: twodo-app
+
 backend:
   image: 993412842562.dkr.ecr.us-east-1.amazonaws.com/twodo-backend
   tag: latest
@@ -10,3 +13,10 @@ frontend:
 
 ingress:
   name: twodo-ingress
+
+postgresql:
+  image: postgres:15
+  port: 5432
+  dbName: twodo_db
+  user: user
+  password: password

@@ -12,14 +12,16 @@ module "vpc" {
   azs             = ["${var.region}a", "${var.region}b"]
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
 
-  map_public_ip_on_launch = true
+  create_igw              = true  # יוצר Internet Gateway
+  map_public_ip_on_launch = true  # מאפשר כתובות IP ציבוריות
 
   enable_nat_gateway   = false
   single_nat_gateway   = false
   enable_dns_hostnames = true
+  enable_dns_support   = true
 
+  # התיקון: וידוא טאגים מדויקים עבור ה-ALB Controller
   public_subnet_tags = {
-    # תגיות חובה כדי שה-Load Balancer Controller יזהה איפה להקים את ה-ALB
     "kubernetes.io/role/elb"                        = "1"
     "kubernetes.io/cluster/${var.project_name}-eks" = "shared"
   }
@@ -63,11 +65,10 @@ module "eks" {
 }
 
 ################################################################################
-# 3. IAM Role עבור ה-Load Balancer Controller - תיקון נתיב וגרסה
+# 3. IAM Role עבור ה-Load Balancer Controller
 ################################################################################
 
 module "lb_role" {
-  # התיקון כאן: שימוש בגרסה יציבה 5.30.0 כדי לפתור את שגיאת ה-init
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "5.30.0"
 
@@ -84,7 +85,36 @@ module "lb_role" {
 }
 
 ################################################################################
-# 4. התקנת AWS Load Balancer Controller (באמצעות Helm)
+# 3.1 תיקון הרשאות (מעודכן עם הרשאות גילוי סאבנטים)
+################################################################################
+
+resource "aws_iam_role_policy" "lb_controller_fix" {
+  name = "ALBControllerAdditionalPerms"
+  role = module.lb_role.iam_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action = [
+          "elasticloadbalancing:DescribeListenerAttributes",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeTags"
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+################################################################################
+# 4. התקנת AWS Load Balancer Controller
 ################################################################################
 
 resource "helm_release" "lb_controller" {
@@ -118,20 +148,85 @@ resource "helm_release" "lb_controller" {
     value = var.region
   }
 
+  depends_on = [module.eks, aws_iam_role_policy.lb_controller_fix]
+}
+
+################################################################################
+# 5. Security Group ייעודי ל-ALB
+################################################################################
+
+resource "aws_security_group" "alb_sg" {
+  name        = "${var.project_name}-alb-public-sg"
+  description = "Shared Security Group for Twodo App ALB"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name                     = "${var.project_name}-alb-public-sg"
+    "elbv2.k8s.aws/resource" = "shared"
+  }
+}
+
+################################################################################
+# 5.1 תיקון ה-Health Check
+################################################################################
+
+resource "aws_security_group_rule" "allow_alb_to_nodes" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 65535
+  protocol                 = "tcp"
+  security_group_id        = module.eks.node_security_group_id
+  source_security_group_id = aws_security_group.alb_sg.id
+  description              = "Allow all traffic from ALB SG to EKS nodes"
+}
+
+################################################################################
+# 6. אוטומציה של ה-Secrets (מנוקה מסיסמאות חשופות)
+################################################################################
+
+resource "kubernetes_secret" "twodo_secrets" {
+  metadata {
+    name      = "twodo-secrets"
+    namespace = "default"
+  }
+
+  data = {
+    # הנתונים נמשכים כעת ממשתנים בקובץ variables.tf או terraform.tfvars
+    db-url            = "postgresql://${var.db_user}:${var.db_password}@postgres-service:5432/${var.db_name}"
+    db-user           = var.db_user
+    db-password       = var.db_password
+    postgres-password = var.db_password
+    api-url           = "/api"
+  }
+
   depends_on = [module.eks]
 }
 
 ################################################################################
-# 5. התקנת ArgoCD (באמצעות Helm)
+# 7. התקנת ArgoCD
 ################################################################################
 
 resource "helm_release" "argocd" {
-  name             = "argocd"
-  repository       = "https://argoproj.github.io/argo-helm"
-  chart            = "argo-cd"
-  namespace        = "argocd"
-  create_namespace = true
-  wait             = false
+  name               = "argocd"
+  repository         = "https://argoproj.github.io/argo-helm"
+  chart              = "argo-cd"
+  namespace          = "argocd"
+  create_namespace   = true
+  wait               = false
 
   set {
     name  = "server.service.type"

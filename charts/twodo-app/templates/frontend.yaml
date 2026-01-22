@@ -15,8 +15,24 @@ spec:
       containers:
       - name: frontend
         image: {{ .Values.frontend.image }}:{{ .Values.frontend.tag }}
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Patching Frontend code..."
+            
+            # 1. החלפה רק של localhost מפורש - מונע יצירת כפילות חדשה
+            find . -type f \( -name "*.js" -o -name "*.html" \) -exec sed -i 's|http://localhost:5001|/api|g' {} +
+            
+            # 2. ניקוי כפילויות - אם הקוד כבר מכיל /api/api, זה יחזיר אותו ל- /api אחד
+            find . -type f \( -name "*.js" -o -name "*.html" \) -exec sed -i 's|/api/api|/api|g' {} +
+            
+            echo "Patching complete. Starting Flask..."
+            python3 app.py
         ports:
         - containerPort: {{ .Values.frontend.port }}
+        env:
+        - name: REACT_APP_API_URL
+          value: "/api"
 ---
 apiVersion: v1
 kind: Service

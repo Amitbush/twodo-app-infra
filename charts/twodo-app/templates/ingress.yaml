@@ -3,13 +3,23 @@ kind: Ingress
 metadata:
   name: {{ .Values.ingress.name }}
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/security-groups: {{ .Values.project_name }}-alb-public-sg
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "false"
+    
+    # התיקון הקריטי: שכתוב נתיבים. חותך את ה-API מהכתובת לפני שהיא מגיעה לבקאנד
+    alb.ingress.kubernetes.io/rewrite-target: /
+    
+    alb.ingress.kubernetes.io/success-codes: "200-404"
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
 spec:
+  ingressClassName: alb 
   rules:
     - http:
         paths:
+          # תופס גם /api וגם /api/api בזכות ה-Prefix
           - path: /api
             pathType: Prefix
             backend:
