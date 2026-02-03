@@ -1,41 +1,45 @@
 ################################################################################
-# 1. VPC Module - הרשת
+# 1. VPC Module - הגדרת רשת קשיחה
 ################################################################################
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.1.1"
 
-  name = "${var.project_name}-vpc"
+  name = "twodo-app-vpc"
   cidr = "10.0.0.0/16"
 
-  azs             = ["${var.region}a", "${var.region}b"]
+  azs             = ["us-east-1a", "us-east-1b"]
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
 
-  create_igw              = true  # יוצר Internet Gateway
-  map_public_ip_on_launch = true  # מאפשר כתובות IP ציבוריות
+  create_igw              = true
+  map_public_ip_on_launch = true
 
   enable_nat_gateway   = false
   single_nat_gateway   = false
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  # התיקון: וידוא טאגים מדויקים עבור ה-ALB Controller
+  # טאגים קשיחים - הדרך היחידה להבטיח זיהוי
   public_subnet_tags = {
-    "kubernetes.io/role/elb"                        = "1"
-    "kubernetes.io/cluster/${var.project_name}-eks" = "shared"
+    "kubernetes.io/role/elb"            = "1"
+    "kubernetes.io/cluster/twodo-app-eks" = "shared"
+  }
+
+  vpc_tags = {
+    "kubernetes.io/cluster/twodo-app-eks" = "shared"
   }
 }
 
 ################################################################################
-# 2. EKS Module - הקלאסטר
+# 2. EKS Module
 ################################################################################
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.15.3"
 
-  cluster_name    = "${var.project_name}-eks"
+  cluster_name    = "twodo-app-eks"
   cluster_version = "1.31"
   
   create_kms_key = false
@@ -50,30 +54,21 @@ module "eks" {
       desired_size = 1
       min_size     = 1
       max_size     = 2
-
       instance_types = ["t3.medium"]
       capacity_type  = "ON_DEMAND"
-      associate_public_ip_address = true
     }
-  }
-
-  tags = {
-    Environment = "staging"
-    Terraform   = "true"
-    Project     = var.project_name
   }
 }
 
 ################################################################################
-# 3. IAM Role עבור ה-Load Balancer Controller
+# 3. Load Balancer Controller - Setup
 ################################################################################
 
 module "lb_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "5.30.0"
 
-  role_name = "${var.project_name}_lb_controller"
-
+  role_name = "twodo-app_lb_controller_role"
   attach_load_balancer_controller_policy = true
 
   oidc_providers = {
@@ -84,60 +79,34 @@ module "lb_role" {
   }
 }
 
-################################################################################
-# 3.1 תיקון הרשאות (מעודכן עם הרשאות גילוי סאבנטים)
-################################################################################
-
-resource "aws_iam_role_policy" "lb_controller_fix" {
-  name = "ALBControllerAdditionalPerms"
-  role = module.lb_role.iam_role_name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action = [
-          "elasticloadbalancing:DescribeListenerAttributes",
-          "ec2:DescribeRouteTables",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeVpcs",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeTags"
-        ]
-        Resource = "*"
-      },
-    ]
-  })
+resource "kubernetes_service_account" "lb_controller_sa" {
+  metadata {
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = module.lb_role.iam_role_arn
+    }
+  }
 }
-
-################################################################################
-# 4. התקנת AWS Load Balancer Controller
-################################################################################
 
 resource "helm_release" "lb_controller" {
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
+  version    = "1.6.2"
 
   set {
     name  = "clusterName"
-    value = module.eks.cluster_name
+    value = "twodo-app-eks"
   }
   set {
     name  = "serviceAccount.create"
-    value = "true"
+    value = "false"
   }
   set {
     name  = "serviceAccount.name"
-    value = "aws-load-balancer-controller"
-  }
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.lb_role.iam_role_arn
+    value = kubernetes_service_account.lb_controller_sa.metadata[0].name
   }
   set {
     name  = "vpcId"
@@ -145,57 +114,45 @@ resource "helm_release" "lb_controller" {
   }
   set {
     name  = "region"
-    value = var.region
-  }
-
-  depends_on = [module.eks, aws_iam_role_policy.lb_controller_fix]
-}
-
-################################################################################
-# 5. Security Group ייעודי ל-ALB
-################################################################################
-
-resource "aws_security_group" "alb_sg" {
-  name        = "${var.project_name}-alb-public-sg"
-  description = "Shared Security Group for Twodo App ALB"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name                     = "${var.project_name}-alb-public-sg"
-    "elbv2.k8s.aws/resource" = "shared"
+    value = "us-east-1"
   }
 }
 
 ################################################################################
-# 5.1 תיקון ה-Health Check
+# 4. ArgoCD - התיקון הקריטי ב-Annotations
 ################################################################################
 
-resource "aws_security_group_rule" "allow_alb_to_nodes" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "tcp"
-  security_group_id        = module.eks.node_security_group_id
-  source_security_group_id = aws_security_group.alb_sg.id
-  description              = "Allow all traffic from ALB SG to EKS nodes"
+resource "helm_release" "argocd" {
+  name               = "argocd"
+  repository         = "https://argoproj.github.io/argo-helm"
+  chart              = "argo-cd"
+  namespace          = "argocd"
+  create_namespace   = true
+
+  set {
+    name  = "server.service.type"
+    value = "LoadBalancer"
+  }
+
+  # אלו ה-Annotations שיכריחו את הקונטרולר למצוא את הסאבנטים הציבוריים
+  set {
+    name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+    value = "external"
+  }
+  set {
+    name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-nlb-target-type"
+    value = "instance"
+  }
+  set {
+    name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
+    value = "internet-facing"
+  }
+
+  depends_on = [module.eks, helm_release.lb_controller]
 }
 
 ################################################################################
-# 6. אוטומציה של ה-Secrets (מנוקה מסיסמאות חשופות)
+# 5. Secrets
 ################################################################################
 
 resource "kubernetes_secret" "twodo_secrets" {
@@ -205,33 +162,10 @@ resource "kubernetes_secret" "twodo_secrets" {
   }
 
   data = {
-    # הנתונים נמשכים כעת ממשתנים בקובץ variables.tf או terraform.tfvars
     db-url            = "postgresql://${var.db_user}:${var.db_password}@postgres-service:5432/${var.db_name}"
     db-user           = var.db_user
     db-password       = var.db_password
     postgres-password = var.db_password
     api-url           = "/api"
   }
-
-  depends_on = [module.eks]
-}
-
-################################################################################
-# 7. התקנת ArgoCD
-################################################################################
-
-resource "helm_release" "argocd" {
-  name               = "argocd"
-  repository         = "https://argoproj.github.io/argo-helm"
-  chart              = "argo-cd"
-  namespace          = "argocd"
-  create_namespace   = true
-  wait               = false
-
-  set {
-    name  = "server.service.type"
-    value = "LoadBalancer"
-  }
-
-  depends_on = [module.eks]
 }

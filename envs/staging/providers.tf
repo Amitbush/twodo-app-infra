@@ -38,24 +38,29 @@ provider "aws" {
 }
 
 # --- הגדרות לחיבור לקלאסטר ה-EKS ---
+# הזרקת Token דינמי בכל הרצה כדי למנוע שגיאות Unreachable
 
-# נתונים על הקלאסטר (Token) לצורך התחברות
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_name
-}
-
-# Provider עבור ניהול אובייקטים של קוברנטיס
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    # חשוב: אנחנו משתמשים בשם הקלאסטר המפורש כדי למנוע טעויות בזמן ה-Bootstrap
+    args        = ["eks", "get-token", "--cluster-name", "twodo-app-eks", "--region", "us-east-1"]
+  }
 }
 
-# Provider עבור התקנת אפליקציות עם Helm
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", "twodo-app-eks", "--region", "us-east-1"]
+    }
   }
 }

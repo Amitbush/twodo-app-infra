@@ -10,18 +10,32 @@ variable "project_name" {
   default     = "twodo-app"
 }
 
-# --- תוספת עבור אבטחת מידע ---
+# --- משתנים לניהול הטאגים של הקלאסטר (למניעת שגיאות Subnet) ---
+
+variable "cluster_tag_key" {
+  description = "The tag key used for EKS cluster resource discovery"
+  type        = string
+  default     = "kubernetes.io/cluster/twodo-app-eks"
+}
+
+variable "elb_tag_key" {
+  description = "The tag key for public ELB discovery"
+  type        = string
+  default     = "kubernetes.io/role/elb"
+}
+
+# --- תוספת עבור אבטחת מידע (מסד נתונים) ---
 
 variable "db_user" {
   description = "Database administrator username"
   type        = string
-  default     = "user" # הערך שמופיע כרגע ב-values.yaml שלך
+  default     = "user"
 }
 
 variable "db_password" {
   description = "Database administrator password"
   type        = string
-  sensitive   = true   # מונע מהסיסמה להיות מודפסת למסך בהרצה
+  sensitive   = true   # מונע מהסיסמה להיות מודפסת למסך
 }
 
 variable "db_name" {
