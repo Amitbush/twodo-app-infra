@@ -53,9 +53,9 @@ module "eks" {
     general = {
       desired_size = 1
       min_size     = 1
-      max_size     = 2
+      max_size     = 1 #antill production
       instance_types = ["t3.medium"]
-      capacity_type  = "ON_DEMAND"
+      capacity_type  = "SPOT"
     }
   }
 }
