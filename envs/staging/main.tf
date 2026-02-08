@@ -20,7 +20,6 @@ module "vpc" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  # טאגים קשיחים - הדרך היחידה להבטיח זיהוי
   public_subnet_tags = {
     "kubernetes.io/role/elb"            = "1"
     "kubernetes.io/cluster/twodo-app-eks" = "shared"
@@ -53,7 +52,7 @@ module "eks" {
     general = {
       desired_size = 1
       min_size     = 1
-      max_size     = 1 #antill production
+      max_size     = 1 
       instance_types = ["t3.medium"]
       capacity_type  = "SPOT"
     }
@@ -77,6 +76,27 @@ module "lb_role" {
       namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
     }
   }
+}
+
+# --- 3.1 תיקון הרשאות ACM לגילוי אוטומטי של תעודות ---
+resource "aws_iam_role_policy" "lb_controller_acm" {
+  name = "allow-acm-discovery"
+  role = module.lb_role.iam_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "acm:DescribeCertificate",
+          "acm:ListCertificates",
+          "acm:GetCertificate"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 resource "kubernetes_service_account" "lb_controller_sa" {
@@ -119,7 +139,7 @@ resource "helm_release" "lb_controller" {
 }
 
 ################################################################################
-# 4. ArgoCD - התיקון הקריטי ב-Annotations
+# 4. ArgoCD
 ################################################################################
 
 resource "helm_release" "argocd" {
@@ -134,7 +154,6 @@ resource "helm_release" "argocd" {
     value = "LoadBalancer"
   }
 
-  # אלו ה-Annotations שיכריחו את הקונטרולר למצוא את הסאבנטים הציבוריים
   set {
     name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
     value = "external"
