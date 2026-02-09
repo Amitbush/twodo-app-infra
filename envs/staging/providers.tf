@@ -48,7 +48,7 @@ provider "kubernetes" {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
     # חשוב: אנחנו משתמשים בשם הקלאסטר המפורש כדי למנוע טעויות בזמן ה-Bootstrap
-    args        = ["eks", "get-token", "--cluster-name", "twodo-app-eks", "--region", "us-east-1"]
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "us-east-1"]
   }
 }
 

@@ -1,5 +1,5 @@
 ################################################################################
-# 1. שליפת ה-Hosted Zone שקנית ב-AWS
+# 1. שליפת ה-Hosted Zone
 ################################################################################
 data "aws_route53_zone" "selected" {
   name         = "twodo-app.org"
@@ -7,7 +7,7 @@ data "aws_route53_zone" "selected" {
 }
 
 ################################################################################
-# 2. בקשת תעודת SSL עם הטאגים הנכונים לגילוי אוטומטי
+# 2. בקשת תעודת SSL עם Discovery Tag
 ################################################################################
 resource "aws_acm_certificate" "cert" {
   domain_name       = "twodo-app.org"
@@ -19,6 +19,7 @@ resource "aws_acm_certificate" "cert" {
 
   tags = {
     Name                                  = "twodo-app-ssl"
+    # הטאג הזה קריטי - ה-LB Controller ימצא את התעודה בזכותו
     "elbv2.k8s.aws/certificate-discovery" = "twodo-app-stack"
   }
 
@@ -48,39 +49,13 @@ resource "aws_route53_record" "cert_validation" {
 }
 
 ################################################################################
-# 4. האימות עצמו - מבטיח שטרפורם לא ימשיך עד שהתעודה במצב ISSUED
+# 4. האימות עצמו
 ################################################################################
 resource "aws_acm_certificate_validation" "cert" {
   certificate_arn         = aws_acm_certificate.cert.arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 }
 
-# הערה: אנחנו משאירים את ה-Output רק ליתר ביטחון, 
-# למרות שב-YAML אנחנו נשתמש בשיטה האוטומטית ולא נדביק אותו ידנית.
 output "certificate_arn" {
   value = aws_acm_certificate.cert.arn
-}
-################################################################################
-# 5. שליפת הנתונים של ה-Load Balancer שנוצר על ידי ה-Ingress
-# הערה: זה יעבוד רק אחרי ש-ArgoCD יסיים להקים את ה-Ingress ב-AWS
-################################################################################
-data "aws_lb" "ingress_lb" {
-  tags = {
-    "ingress.k8s.aws/stack" = "twodo-app-stack"
-  }
-}
-
-################################################################################
-# 6. יצירת רשומת ה-DNS (Alias) שמחברת את twodo-app.org ל-Load Balancer
-################################################################################
-resource "aws_route53_record" "app_alias" {
-  zone_id = data.aws_route53_zone.selected.zone_id
-  name    = "twodo-app.org"
-  type    = "A"
-
-  alias {
-    name                   = data.aws_lb.ingress_lb.dns_name
-    zone_id                = data.aws_lb.ingress_lb.zone_id
-    evaluate_target_health = true
-  }
 }
