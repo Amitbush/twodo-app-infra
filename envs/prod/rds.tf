@@ -2,7 +2,7 @@
 # RDS Security Group - מי יכול לדבר עם ה-Database
 ################################################################################
 resource "aws_security_group" "rds_sg" {
-  name        = "twodo-rds-sg"
+  name        = "twodo-prod-rds-sg"
   description = "Allow inbound traffic from EKS nodes"
   vpc_id      = module.vpc.vpc_id
 
@@ -27,11 +27,11 @@ resource "aws_security_group" "rds_sg" {
 # DB Subnet Group - איפה ה-DB יושב פיזית
 ################################################################################
 resource "aws_db_subnet_group" "postgres" {
-  name       = "twodo-db-subnet-group"
+  name       = "twodo-prod-db-subnet-group"
   subnet_ids = module.vpc.public_subnets # משתמש בסאבנטים הציבוריים שהגדרת ב-VPC
 
   tags = {
-    Name = "Twodo DB Subnet Group"
+    Name = "Twodo Prod DB Subnet Group"
   }
 }
 
@@ -39,7 +39,7 @@ resource "aws_db_subnet_group" "postgres" {
 # RDS Instance - מסד הנתונים עצמו
 ################################################################################
 resource "aws_db_instance" "postgres" {
-  identifier           = "twodo-db"
+  identifier           = "twodo-db-prod"
   allocated_storage    = 20
   storage_type         = "gp2"
   engine               = "postgres"
@@ -58,6 +58,6 @@ resource "aws_db_instance" "postgres" {
   skip_final_snapshot  = true  # מאפשר מחיקה מהירה של ה-DB בסיום הפרויקט
   
   tags = {
-    Name = "Twodo-Postgres-RDS"
+    Name = "Twodo-Prod-Postgres-RDS"
   }
 }
