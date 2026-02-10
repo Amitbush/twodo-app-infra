@@ -29,7 +29,7 @@ variable "elb_tag_key" {
 variable "db_user" {
   description = "Database administrator username"
   type        = string
-  default     = "user"
+  default     = "twodo_admin"
 }
 
 variable "db_password" {
