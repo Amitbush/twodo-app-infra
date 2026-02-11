@@ -1,0 +1,47 @@
+{
+  "title": "Twodo Backend Error Rate",
+  "uid": "twodo-backend-errors-stat",
+  "panels": [
+    {
+      "title": "Active Errors (Last 1m)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        { 
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(flask_http_request_total{status=~\"4..|5..\", namespace=\"default\"}[1m])) or on() vector(0)",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "time": { "from": "now-1h", "to": "now" }
+}
